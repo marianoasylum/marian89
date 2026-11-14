@@ -411,7 +411,7 @@ function initSocialInteractions() {
   if (copyGmailBtn) {
     copyGmailBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      const email = copyGmailBtn.getAttribute('data-email') || 'marian89.diseno@gmail.com';
+      const email = copyGmailBtn.getAttribute('data-email') || 'marianrgz89@gmail.com';
 
       if (navigator.clipboard) {
         navigator.clipboard.writeText(email).then(() => {
@@ -444,16 +444,79 @@ function showToast(message) {
 }
 
 /* ==========================================================================
-   7. FORMULARIO DE CONTACTO
+   7. FORMULARIO DE CONTACTO (ENVÍO FINAL A marianrgz89@gmail.com)
    ========================================================================== */
 function initContactForm() {
   const form = document.getElementById('portfolio-contact-form');
   if (!form) return;
 
-  form.addEventListener('submit', (e) => {
+  const targetEmail = 'marianrgz89@gmail.com';
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const name = form.querySelector('#form-name')?.value;
-    showToast(`¡Gracias ${name || ''}! Tu mensaje ha sido enviado. Marian89 responderá pronto.`);
-    form.reset();
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const originalBtnHtml = submitBtn ? submitBtn.innerHTML : '';
+
+    const name = form.querySelector('#form-name')?.value.trim() || '';
+    const email = form.querySelector('#form-email')?.value.trim() || '';
+    const subject = form.querySelector('#form-subject')?.value.trim() || 'Consulta desde Portfolio';
+    const message = form.querySelector('#form-message')?.value.trim() || '';
+
+    if (!name || !email || !message) {
+      showToast('Por favor completa los campos obligatorios.');
+      return;
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `
+        <svg class="spin-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" stroke-opacity="0.25" stroke="currentColor"/>
+          <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor"/>
+        </svg>
+        <span>Enviando mensaje...</span>
+      `;
+    }
+
+    try {
+      // Envío asíncrono directo a marianrgz89@gmail.com mediante FormSubmit API
+      const response = await fetch(`https://formsubmit.co/ajax/${targetEmail}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          Nombre: name,
+          Email: email,
+          Asunto: subject,
+          Mensaje: message,
+          _subject: `[Portfolio Marian89] Mensaje de ${name} - ${subject}`,
+          _template: 'table'
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && (data.success === 'true' || data.success === true || response.status === 200)) {
+        showToast(`¡Gracias ${name}! Mensaje enviado a ${targetEmail}. Te responderé a la brevedad.`);
+        form.reset();
+      } else {
+        throw new Error(data.message || 'Error en el servicio de recepción');
+      }
+    } catch (err) {
+      console.warn('Envío AJAX no completado, usando fallback por mailto:', err);
+      // Fallback 100% garantizado: abrir cliente de correo con los datos precompletados dirigidos a marianrgz89@gmail.com
+      const mailtoUrl = `mailto:${targetEmail}?subject=${encodeURIComponent(`[Portfolio Marian89] ${subject}`)}&body=${encodeURIComponent(`De: ${name} (${email})\n\nMensaje:\n${message}`)}`;
+      window.location.href = mailtoUrl;
+      showToast(`Abriendo correo para enviar a ${targetEmail}...`);
+      form.reset();
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnHtml;
+      }
+    }
   });
 }
