@@ -37,70 +37,142 @@ function initIntroScreen() {
   if (!introScreen) return;
 
   let introDismissed = false;
+  let progressInterval = null;
 
   function dismissIntro() {
     if (introDismissed) return;
     introDismissed = true;
+    if (progressInterval) {
+      clearInterval(progressInterval);
+      progressInterval = null;
+    }
     introScreen.classList.add('hide-intro');
     if (introVideo) {
       introVideo.pause();
     }
+    // Ocultar del DOM tras completarse la animación de fade out
+    setTimeout(() => {
+      if (introDismissed) {
+        introScreen.style.display = 'none';
+      }
+    }, 850);
   }
 
-  // Actualizar barra de progreso con el avance del video
+  function updateProgress(percent) {
+    const clamped = Math.min(100, Math.max(0, Math.round(percent)));
+    if (loaderFill) loaderFill.style.width = `${clamped}%`;
+    if (loaderPercent) loaderPercent.textContent = `${clamped}%`;
+  }
+
+  function simulateProgress() {
+    if (progressInterval || introDismissed) return;
+    let p = parseInt(loaderPercent?.textContent || '0', 10) || 0;
+    progressInterval = setInterval(() => {
+      if (introDismissed) {
+        clearInterval(progressInterval);
+        return;
+      }
+      p += 4;
+      updateProgress(p);
+      if (p >= 100) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+        setTimeout(dismissIntro, 400);
+      }
+    }, 70);
+  }
+
+  // Manejo de reproducción y sincronización con video
   if (introVideo) {
+    let videoProgressStarted = false;
+
     introVideo.addEventListener('timeupdate', () => {
-      if (introVideo.duration) {
-        const progress = Math.min(100, Math.round((introVideo.currentTime / introVideo.duration) * 100));
-        if (loaderFill) loaderFill.style.width = `${progress}%`;
-        if (loaderPercent) loaderPercent.textContent = `${progress}%`;
+      if (introVideo.duration && !introDismissed) {
+        videoProgressStarted = true;
+        const progress = (introVideo.currentTime / introVideo.duration) * 100;
+        updateProgress(progress);
       }
     });
 
     // Al finalizar el video, cerrar intro automáticamente
     introVideo.addEventListener('ended', () => {
+      updateProgress(100);
       setTimeout(dismissIntro, 400);
+    });
+
+    // Manejo de errores en video
+    introVideo.addEventListener('error', () => {
+      console.warn('Error al cargar video de intro, usando simulación.');
+      simulateProgress();
     });
 
     // Iniciar reproducción automática
     const playPromise = introVideo.play();
     if (playPromise !== undefined) {
-      playPromise.catch(() => {
-        simulateProgress();
-      });
+      playPromise
+        .then(() => {
+          videoProgressStarted = true;
+        })
+        .catch((err) => {
+          console.warn('Autoplay bloqueado o no disponible:', err);
+          simulateProgress();
+        });
     }
+
+    // Safety fallback: si a los 2.5s el video no ha avanzado, simular progreso
+    setTimeout(() => {
+      if (!videoProgressStarted && !introDismissed) {
+        simulateProgress();
+      }
+    }, 2500);
+
+    // Timeout máximo de seguridad: la pantalla nunca se quedará colgada más de 12s
+    setTimeout(() => {
+      if (!introDismissed) {
+        dismissIntro();
+      }
+    }, 12000);
   } else {
     simulateProgress();
   }
 
-  function simulateProgress() {
-    let p = 0;
-    const interval = setInterval(() => {
-      p += 5;
-      if (loaderFill) loaderFill.style.width = `${p}%`;
-      if (loaderPercent) loaderPercent.textContent = `${p}%`;
-      if (p >= 100) {
-        clearInterval(interval);
-        setTimeout(dismissIntro, 500);
-      }
-    }, 70);
-  }
-
+  // Botón "Entrar al Sitio" / Skip
   if (skipBtn) {
-    skipBtn.addEventListener('click', dismissIntro);
+    skipBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      dismissIntro();
+    });
   }
 
-  // Permitir reabrir la intro desde la barra de navegación o hero
+  // Tecla Escape para saltar la intro
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !introDismissed) {
+      dismissIntro();
+    }
+  });
+
+  // Botón para volver a ver la intro desde el navbar o menú
   if (replayBtn) {
     replayBtn.addEventListener('click', (e) => {
       e.preventDefault();
       introDismissed = false;
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+      introScreen.style.display = 'flex';
+      void introScreen.offsetWidth; // Forzar reflow para reiniciar transición
       introScreen.classList.remove('hide-intro');
-      if (loaderFill) loaderFill.style.width = '0%';
-      if (loaderPercent) loaderPercent.textContent = '0%';
+      updateProgress(0);
+
       if (introVideo) {
         introVideo.currentTime = 0;
-        introVideo.play().catch(console.warn);
+        const p = introVideo.play();
+        if (p !== undefined) {
+          p.catch(() => simulateProgress());
+        }
+      } else {
+        simulateProgress();
       }
     });
   }
